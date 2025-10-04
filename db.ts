@@ -8,7 +8,7 @@ export let client: Client;
 let heartbeatInterval: number | undefined;
 
 /**
- * 使用SHA-256进行密码哈希（替代bcrypt）
+ * 使用SHA-256进行密码哈希
  */
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -47,7 +47,7 @@ export async function initDb() {
     hostname: host,
     port,
     database: "crate",
-    ssl: hostname.includes(".cratedb.net"), // 云环境自动启用SSL
+    ssl: hostname.includes(".cratedb.net"),
   });
 
   // 连接数据库
@@ -59,10 +59,25 @@ export async function initDb() {
     throw error;
   }
 
-  // 创建提交记录表（待审核）- 简化CrateDB兼容语法
+  // 创建序列用于自增ID[6](@ref)
+  try {
+    await client.queryObject(`
+      CREATE SEQUENCE IF NOT EXISTS submissions_id_seq
+      START WITH 1
+      INCREMENT BY 1
+      NO MINVALUE
+      NO MAXVALUE
+      CACHE 1
+    `);
+    console.log("Sequence 'submissions_id_seq' created or already exists");
+  } catch (error) {
+    console.warn("Sequence creation note:", error.message);
+  }
+
+  // 创建提交记录表 - 使用序列作为默认值[6,7](@ref)
   await client.queryObject(`
     CREATE TABLE IF NOT EXISTS submissions (
-      id INTEGER PRIMARY KEY,
+      id INTEGER PRIMARY KEY DEFAULT nextval('submissions_id_seq'),
       imdb_id TEXT NOT NULL,
       acfun_url TEXT NOT NULL,
       submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -98,13 +113,14 @@ export async function initDb() {
     )
   `);
 
-  // 初始化心跳记录
+  // 初始化心跳记录 - 使用ON CONFLICT避免重复键错误[1](@ref)
   try {
     await client.queryObject(`
       INSERT INTO system_heartbeat (id, last_heartbeat) 
       VALUES (1, CURRENT_TIMESTAMP)
       ON CONFLICT (id) DO UPDATE SET last_heartbeat = CURRENT_TIMESTAMP
     `);
+    console.log("Heartbeat table initialized or updated");
   } catch (error) {
     console.warn("Heartbeat table initialization note:", error.message);
   }
@@ -133,7 +149,7 @@ export async function initDb() {
     console.warn("ADMIN_USERNAME and ADMIN_PASSWORD not set - no initial admin created");
   }
 
-  // 启动12小时一次的心跳机制
+  // 启动心跳机制
   startHeartbeat();
 }
 
@@ -193,7 +209,7 @@ export async function getPendingCount(): Promise<number> {
 }
 
 /**
- * 提交新的条目（带数量限制）
+ * 提交新的条目 - 修改为使用数据库自增ID[6,7](@ref)
  */
 export async function submitEntry(imdbId: string, acfunUrl: string) {
   const pendingCount = await getPendingCount();
@@ -203,13 +219,27 @@ export async function submitEntry(imdbId: string, acfunUrl: string) {
     throw new Error("Pending submissions limit reached (400). Try again later.");
   }
   
-  // 生成唯一ID（使用时间戳和随机数）
-  const id = Date.now();
-  
-  await client.queryObject({
-    text: "INSERT INTO submissions (id, imdb_id, acfun_url) VALUES ($1, $2, $3)",
-    args: [id, imdbId, acfunUrl],
-  });
+  try {
+    // 不再手动生成ID，使用数据库序列自增[6](@ref)
+    await client.queryObject({
+      text: "INSERT INTO submissions (imdb_id, acfun_url) VALUES ($1, $2)",
+      args: [imdbId, acfunUrl],
+    });
+    
+    // 获取刚插入的记录的ID（可选）
+    const result = await client.queryObject({
+      text: "SELECT currval('submissions_id_seq') as last_id",
+      args: [],
+    });
+    
+    const lastId = result.rows[0].last_id;
+    console.log(`Submission created with ID: ${lastId}`);
+    
+    return { success: true, id: lastId };
+  } catch (error) {
+    console.error("Submit entry error:", error);
+    throw new Error(`Submission failed: ${error.message}`);
+  }
 }
 
 /**
