@@ -86,158 +86,6 @@ async function handleRequest(req: Request) {
     }
   }
 
-  // 首页路由
-  if (path === "/") {
-    // 处理提交表单的POST请求
-    if (req.method === "POST") {
-      try {
-        const formData = await req.formData();
-        const imdbId = formData.get("imdbId") as string;
-        const acfunUrl = formData.get("acfunUrl") as string;
-
-        if (!imdbId || !acfunUrl) {
-          return new Response(JSON.stringify({ error: "IMDb ID and AcFun URL are required" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        await submitEntry(imdbId, acfunUrl);
-        return new Response(JSON.stringify({ success: true, message: "Submission received. Waiting for review." }), {
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-    }
-
-    // 显示首页HTML
-    const html = `
-      <html>
-        <head>
-          <title>Movie Trailer Link Manager</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
-        </head>
-        <body class="bg-gray-100 min-h-screen">
-          <header class="bg-gray-800 text-white p-6">
-            <div class="container mx-auto">
-              <h1 class="text-3xl font-bold">
-                <i class="fa fa-film mr-3"></i>Movie Trailer Link Manager
-              </h1>
-              <p class="mt-2 text-gray-300">Submit and find AcFun trailer links by IMDb ID</p>
-            </div>
-          </header>
-
-          <main class="container mx-auto p-6">
-            <section class="bg-white rounded-lg shadow-md p-6 mb-8">
-              <h2 class="text-2xl font-semibold mb-4">
-                <i class="fa fa-paper-plane mr-2"></i>Submit New Trailer Link
-              </h2>
-              
-              <form id="submissionForm" class="space-y-4">
-                <div>
-                  <label for="imdbId" class="block text-gray-700 mb-1">IMDb ID</label>
-                  <input 
-                    type="text" 
-                    id="imdbId" 
-                    name="imdbId" 
-                    placeholder="e.g., tt1234567" 
-                    pattern="^tt\d+$"
-                    title="IMDb ID must start with 'tt' followed by numbers"
-                    required
-                    class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                </div>
-                
-                <div>
-                  <label for="acfunUrl" class="block text-gray-700 mb-1">AcFun Trailer URL</label>
-                  <input 
-                    type="url" 
-                    id="acfunUrl" 
-                    name="acfunUrl" 
-                    placeholder="https://www.acfun.cn/..." 
-                    required
-                    class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                </div>
-                
-                <button 
-                  type="submit" 
-                  class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-                >
-                  <i class="fa fa-check mr-2"></i>Submit for Review
-                </button>
-              </form>
-              
-              <div id="message" class="mt-4 hidden p-3 rounded"></div>
-            </section>
-
-            <section class="bg-white rounded-lg shadow-md p-6">
-              <h2 class="text-2xl font-semibold mb-4">
-                <i class="fa fa-key mr-2"></i>Admin Access
-              </h2>
-              <p class="mb-4">Are you an administrator? Access the admin panel to review submissions.</p>
-              <a 
-                href="/admin" 
-                class="inline-flex items-center bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-colors"
-              >
-                <i class="fa fa-lock mr-2"></i>Admin Panel
-              </a>
-            </section>
-          </main>
-
-          <footer class="bg-gray-800 text-white p-6 mt-12">
-            <div class="container mx-auto text-center">
-              <p>&copy; 2025 Movie Trailer Link Manager</p>
-            </div>
-          </footer>
-
-          <script>
-            // 处理表单提交
-            document.getElementById('submissionForm').addEventListener('submit', async (e) => {
-              e.preventDefault();
-              const messageEl = document.getElementById('message');
-              const formData = new FormData(e.target);
-              
-              try {
-                const response = await fetch('/', {
-                  method: 'POST',
-                  body: formData
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                  messageEl.textContent = data.message;
-                  messageEl.className = 'mt-4 p-3 rounded bg-green-100 text-green-800';
-                  e.target.reset();
-                } else {
-                  messageEl.textContent = data.error;
-                  messageEl.className = 'mt-4 p-3 rounded bg-red-100 text-red-800';
-                }
-              } catch (error) {
-                messageEl.textContent = 'An error occurred while submitting. Please try again.';
-                messageEl.className = 'mt-4 p-3 rounded bg-red-100 text-red-800';
-              }
-              
-              // 5秒后隐藏消息
-              setTimeout(() => {
-                messageEl.className = 'mt-4 hidden p-3 rounded';
-              }, 5000);
-            });
-          </script>
-        </body>
-      </html>
-    `;
-    return new Response(html, {
-      headers: { "Content-Type": "text/html" },
-    });
-  }
-
   // API: 通过IMDb ID获取AcFun URL
   if (path.startsWith("/api/")) {
     const imdbId = path.split("/")[2];
@@ -439,10 +287,25 @@ async function handleRequest(req: Request) {
                     <i class="fa fa-users mr-2"></i>Manage Administrators
                   </h2>
                   
+                  <div class="bg-white p-4 rounded-lg shadow mb-4">
+                    <h3 class="font-medium mb-3">Add Secondary Admin</h3>
+                    <form id="addAdminForm" class="flex flex-col sm:flex-row gap-2">
+                      <input type="text" name="username" placeholder="Username" 
+                        class="flex-1 px-3 py-2 border rounded">
+                      <input type="password" name="password" placeholder="Password" 
+                        class="flex-1 px-3 py-2 border rounded">
+                      <button type="button" onclick="confirmAddAdmin()"
+                        class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                        <i class="fa fa-plus mr-1"></i>Add Admin
+                      </button>
+                    </form>
+                    <div id="adminMessage" class="mt-2 hidden"></div>
+                  </div>
+                  
                   <div class="bg-white p-4 rounded-lg shadow">
                     <h3 class="font-medium mb-3">Current Administrators</h3>
                     <table class="min-w-full">
-                      <thead class="bg-gray-50">
+                      <thead class="bg-gray-100">
                         <tr>
                           <th class="py-2 px-4 border-b">Username</th>
                           <th class="py-2 px-4 border-b">Role</th>
@@ -450,66 +313,231 @@ async function handleRequest(req: Request) {
                         </tr>
                       </thead>
                       <tbody id="adminList">
-                        <!-- 管理员列表将通过JS动态加载 -->
+                        <!-- Will be populated by JavaScript -->
                       </tbody>
                     </table>
-
-                    <div id="adminMessage" class="mt-2 hidden"></div>
-
-                    <div class="mt-6 pt-4 border-t">
-                      <h3 class="font-medium mb-3">Add Secondary Admin</h3>
-                      <form id="addAdminForm" class="space-y-3">
-                        <div>
-                          <label class="block text-gray-700">Username</label>
-                          <input type="text" name="username" class="px-3 py-2 border rounded" required>
-                        </div>
-                        <div>
-                          <label class="block text-gray-700">Password</label>
-                          <input type="password" name="password" class="px-3 py-2 border rounded" required>
-                        </div>
-                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                          Add Admin
-                        </button>
-                      </form>
-                    </div>
                   </div>
                 </section>
               ` : ""}
             </main>
 
-            <script src="/static/admin.js"></script>
             <script>
-              // 审核操作确认
+              // 审核操作二次确认
               function confirmAction(id, action) {
-                const confirmed = confirm(`Are you sure you want to ${action} this submission?`);
-                if (confirmed) {
+                const actionText = action === 'approve' ? 'approve' : 'reject';
+                const confirmation = confirm(`Are you sure you want to ${actionText} this submission?`);
+                
+                if (confirmation) {
                   const form = document.getElementById(`form-${id}`);
-                  form.querySelector('input[name="action"]').value = action;
-                  form.submit();
+                  if (form) {
+                    form.querySelector('input[name="action"]').value = action;
+                    form.submit();
+                  }
+                }
+              }
+
+              // 添加管理员二次确认
+              function confirmAddAdmin() {
+                const username = document.querySelector('#addAdminForm input[name="username"]').value.trim();
+                if (!username) {
+                  showAdminMessage('Please enter a username', 'error');
+                  return;
+                }
+                
+                const confirmation = confirm(`Are you sure you want to add "${username}" as a secondary admin?`);
+                if (confirmation) {
+                  document.getElementById('addAdminForm').submit();
                 }
               }
             </script>
+            <script src="/static/admin.js"></script>
           </body>
         </html>
       `;
-      return new Response(html, {
-        headers: { "Content-Type": "text/html" },
-      });
+
+      return new Response(html, { headers: { "Content-Type": "text/html" } });
     } catch (error) {
-      return new Response(`Error loading admin panel: ${error.message}`, { status: 500 });
+      return new Response(`Error loading admin page: ${error.message}`, { status: 500 });
     }
   }
 
-  // 未匹配的路由
-  return new Response("Not found", { status: 404 });
+  // 处理提交新条目
+  if (path === "/submit" && req.method === "POST") {
+    try {
+      const formData = await req.formData();
+      const imdbId = (formData.get("imdb_id") as string)?.trim();
+      const acfunUrl = (formData.get("acfun_url") as string)?.trim();
+
+      if (!imdbId || !acfunUrl) {
+        return new Response("IMDb ID and AcFun URL are required", { status: 400 });
+      }
+
+      if (!acfunUrl.startsWith("https://")) {
+        return new Response("AcFun URL must start with https://", { status: 400 });
+      }
+
+      await submitEntry(imdbId, acfunUrl);
+      return new Response(null, {
+        status: 303,
+        headers: { Location: "/" },
+      });
+    } catch (error) {
+      if (error.message.includes("limit reached")) {
+        return new Response(error.message, { 
+          status: 429,
+          headers: { "Content-Type": "text/plain" }
+        });
+      }
+      return new Response(`Error submitting entry: ${error.message}`, { status: 500 });
+    }
+  }
+
+  // 首页
+  try {
+    const recent = await getRecentApproved(10);
+    const posters = await Promise.all(
+      recent.map(async (item) => ({
+        ...item,
+        poster: await getPoster(item.imdb_id),
+      }))
+    );
+
+    const html = `
+      <html>
+        <head>
+          <title>Movie Trailers | Free Film & Music Clips</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body class="bg-gray-50">
+          <header class="bg-white shadow-sm">
+            <div class="container mx-auto p-4">
+              <div class="flex justify-between items-center">
+                <h1 class="text-2xl font-bold text-gray-800">
+                  <i class="fa fa-film mr-2 text-blue-600"></i>Movie Trailers
+                </h1>
+                <a href="/admin" class="text-gray-600 hover:text-gray-900 flex items-center">
+                  <i class="fa fa-lock mr-1"></i> Admin
+                </a>
+              </div>
+            </div>
+          </header>
+
+          <main class="container mx-auto p-4">
+            <section class="mb-8 bg-white p-6 rounded-lg shadow-sm">
+              <h2 class="text-xl font-semibold mb-4">Submit New Trailer</h2>
+              <form action="/submit" method="POST" onsubmit="return confirmSubmit()" class="space-y-4">
+                <div>
+                  <label for="imdb_id" class="block text-gray-700 mb-1">IMDb ID</label>
+                  <input 
+                    type="text" 
+                    id="imdb_id" 
+                    name="imdb_id" 
+                    placeholder="e.g. tt1234567" 
+                    class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                  <p class="text-sm text-gray-500 mt-1">
+                    Find this on IMDb - looks like "tt" followed by 7-8 numbers
+                  </p>
+                </div>
+                
+                <div>
+                  <label for="acfun_url" class="block text-gray-700 mb-1">AcFun URL</label>
+                  <input 
+                    type="url" 
+                    id="acfun_url" 
+                    name="acfun_url" 
+                    placeholder="https://www.acfun.cn/..." 
+                    class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                </div>
+                
+                <button 
+                  type="submit" 
+                  class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                >
+                  <i class="fa fa-paper-plane mr-1"></i> Submit
+                </button>
+              </form>
+            </section>
+
+            <section>
+              <h2 class="text-xl font-semibold mb-4">Recently Approved Trailers</h2>
+              
+              ${posters.length === 0 ? `
+                <div class="bg-gray-100 p-6 rounded-lg text-center">
+                  <i class="fa fa-info-circle text-2xl text-gray-500 mb-2"></i>
+                  <p>No approved trailers yet. Check back soon!</p>
+                </div>
+              ` : `
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                  ${posters.map(item => item.poster ? `
+                    <div class="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                      <div class="relative pb-[150%]">
+                        <img 
+                          src="${item.poster}" 
+                          alt="Poster for ${item.imdb_id}" 
+                          class="absolute inset-0 w-full h-full object-cover"
+                        >
+                      </div>
+                      <div class="p-3">
+                        <p class="text-sm font-medium text-gray-800 mb-1">${item.imdb_id}</p>
+                        <a 
+                          href="${item.acfun_url}" 
+                          target="_blank" 
+                          class="text-blue-600 text-sm hover:underline flex items-center"
+                        >
+                          <i class="fa fa-play-circle mr-1"></i> Watch on AcFun
+                        </a>
+                        <p class="text-xs text-gray-500 mt-2">
+                          Approved by ${item.reviewer}
+                        </p>
+                      </div>
+                    </div>
+                  ` : '').join("")}
+                </div>
+              `}
+            </section>
+          </main>
+
+          <footer class="bg-gray-800 text-white mt-8 py-6">
+            <div class="container mx-auto px-4 text-center text-sm">
+              <p>© ${new Date().getFullYear()} Movie Trailers. All submitted content is reviewed.</p>
+            </div>
+          </footer>
+
+          <script>
+            // 提交内容二次确认
+            function confirmSubmit() {
+              const imdbId = document.getElementById('imdb_id').value.trim();
+              const message = imdbId 
+                ? `Are you sure you want to submit the trailer for ${imdbId}?`
+                : 'Are you sure you want to submit this trailer?';
+              
+              return confirm(message);
+            }
+          </script>
+        </body>
+      </html>
+    `;
+
+    return new Response(html, { headers: { "Content-Type": "text/html" } });
+  } catch (error) {
+    return new Response(`Error loading page: ${error.message}`, { status: 500 });
+  }
 }
 
-// 启动HTTP服务
+// 启动服务器
 const port = parseInt(Deno.env.get("PORT") || "8000");
 console.log(`Server running on http://localhost:${port}`);
-await serve(handleRequest, { port });
+serve(handleRequest, { port });
 
-// 关闭时清理数据库连接
-window.addEventListener("unload", () => {
-  closeDb();
+// 优雅关闭
+window.addEventListener("unload", async () => {
+  console.log("Closing database connection...");
+  await closeDb();
 });
+    
