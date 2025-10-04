@@ -284,26 +284,29 @@ async function handleRequest(req: Request) {
               ${admin.role === "super" ? `
                 <section class="border-t pt-6">
                   <h2 class="text-xl font-semibold mb-4 flex items-center">
-                    <i class="fa fa-users mr-2"></i>Manage Administrators
+                    <i class="fa fa-users mr-2"></i>Admin Management
                   </h2>
                   
-                  <div class="bg-white p-4 rounded-lg shadow mb-4">
-                    <h3 class="font-medium mb-3">Add Secondary Admin</h3>
-                    <form id="addAdminForm" class="flex flex-col sm:flex-row gap-2">
-                      <input type="text" name="username" placeholder="Username" 
-                        class="flex-1 px-3 py-2 border rounded">
-                      <input type="password" name="password" placeholder="Password" 
-                        class="flex-1 px-3 py-2 border rounded">
-                      <button type="button" onclick="confirmAddAdmin()"
-                        class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
-                        <i class="fa fa-plus mr-1"></i>Add Admin
+                  <div class="bg-white p-4 rounded-lg border mb-6">
+                    <h3 class="font-medium mb-3">Add New Secondary Admin</h3>
+                    <form id="addAdminForm" class="space-y-4">
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700">Username</label>
+                        <input type="text" name="username" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                      </div>
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" name="password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                      </div>
+                      <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                        <i class="fa fa-plus mr-2"></i>Add Admin
                       </button>
                     </form>
                     <div id="adminMessage" class="mt-2 hidden"></div>
                   </div>
                   
-                  <div class="bg-white p-4 rounded-lg shadow">
-                    <h3 class="font-medium mb-3">Current Administrators</h3>
+                  <div class="bg-white rounded-lg border overflow-hidden">
+                    <h3 class="font-medium p-4 border-b">Current Admins</h3>
                     <table class="min-w-full">
                       <thead class="bg-gray-100">
                         <tr>
@@ -313,7 +316,7 @@ async function handleRequest(req: Request) {
                         </tr>
                       </thead>
                       <tbody id="adminList">
-                        <!-- Will be populated by JavaScript -->
+                        <!-- Admin list will be loaded via JavaScript -->
                       </tbody>
                     </table>
                   </div>
@@ -322,11 +325,10 @@ async function handleRequest(req: Request) {
             </main>
 
             <script>
-              // 审核操作二次确认
+              // 确认操作函数
               function confirmAction(id, action) {
                 const actionText = action === 'approve' ? 'approve' : 'reject';
                 const confirmation = confirm(`Are you sure you want to ${actionText} this submission?`);
-                
                 if (confirmation) {
                   const form = document.getElementById(`form-${id}`);
                   if (form) {
@@ -335,209 +337,110 @@ async function handleRequest(req: Request) {
                   }
                 }
               }
-
-              // 添加管理员二次确认
-              function confirmAddAdmin() {
-                const username = document.querySelector('#addAdminForm input[name="username"]').value.trim();
-                if (!username) {
-                  showAdminMessage('Please enter a username', 'error');
-                  return;
-                }
-                
-                const confirmation = confirm(`Are you sure you want to add "${username}" as a secondary admin?`);
-                if (confirmation) {
-                  document.getElementById('addAdminForm').submit();
-                }
-              }
             </script>
             <script src="/static/admin.js"></script>
           </body>
         </html>
       `;
-
-      return new Response(html, { headers: { "Content-Type": "text/html" } });
+      
+      return new Response(html, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     } catch (error) {
       return new Response(`Error loading admin page: ${error.message}`, { status: 500 });
     }
   }
 
-  // 处理提交新条目
-  if (path === "/submit" && req.method === "POST") {
+  // 首页
+  if (path === "/" || path === "") {
     try {
-      const formData = await req.formData();
-      const imdbId = (formData.get("imdb_id") as string)?.trim();
-      const acfunUrl = (formData.get("acfun_url") as string)?.trim();
-
-      if (!imdbId || !acfunUrl) {
-        return new Response("IMDb ID and AcFun URL are required", { status: 400 });
-      }
-
-      if (!acfunUrl.startsWith("https://")) {
-        return new Response("AcFun URL must start with https://", { status: 400 });
-      }
-
-      await submitEntry(imdbId, acfunUrl);
-      return new Response(null, {
-        status: 303,
-        headers: { Location: "/" },
+      const recent = await getRecentApproved(20);
+      const posters = await Promise.all(
+        recent.map(async (item) => ({
+          ...item,
+          poster: await getPoster(item.imdb_id),
+        }))
+      );
+      
+      const html = `
+        <html>
+          <head>
+            <title>Movie Trailers</title>
+            <script src="https://cdn.tailwindcss.com"></script>
+            <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+          </head>
+          <body class="bg-gray-100">
+            <header class="bg-gray-800 text-white p-4">
+              <div class="container mx-auto text-center">
+                <h1 class="text-3xl font-bold">
+                  <i class="fa fa-film mr-2"></i>Movie Trailers Archive
+                </h1>
+                <p class="mt-2">Recent approved submissions</p>
+              </div>
+            </header>
+            
+            <main class="container mx-auto p-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                ${posters.map(item => `
+                  <div class="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
+                    ${item.poster ? `
+                      <img src="${item.poster}" alt="Poster for ${item.imdb_id}" class="w-full h-64 object-cover">
+                    ` : `
+                      <div class="w-full h-64 bg-gray-200 flex items-center justify-center">
+                        <i class="fa fa-film text-5xl text-gray-400"></i>
+                      </div>
+                    `}
+                    <div class="p-4">
+                      <div class="text-sm text-gray-500 mb-2">IMDb ID: ${item.imdb_id}</div>
+                      <a href="${item.acfun_url}" target="_blank" class="text-blue-600 hover:underline flex items-center">
+                        <i class="fa fa-external-link mr-1"></i>Watch on AcFun
+                      </a>
+                      <div class="mt-2 text-xs text-gray-500">
+                        Approved: ${new Date(item.approved_at).toLocaleString()}
+                      </div>
+                      <div class="text-xs text-gray-500">
+                        By: ${item.reviewer}
+                      </div>
+                    </div>
+                  </div>
+                `).join("")}
+              </div>
+              
+              ${recent.length === 0 ? `
+                <div class="mt-8 text-center bg-white p-6 rounded-lg">
+                  <i class="fa fa-info-circle text-blue-500 text-3xl mb-2"></i>
+                  <p>No approved submissions yet</p>
+                </div>
+              ` : ""}
+            </main>
+            
+            <footer class="bg-gray-800 text-white p-4 mt-8">
+              <div class="container mx-auto text-center text-sm">
+                <p>&copy; ${new Date().getFullYear()} Movie Trailers Archive</p>
+              </div>
+            </footer>
+          </body>
+        </html>
+      `;
+      
+      return new Response(html, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     } catch (error) {
-      if (error.message.includes("limit reached")) {
-        return new Response(error.message, { 
-          status: 429,
-          headers: { "Content-Type": "text/plain" }
-        });
-      }
-      return new Response(`Error submitting entry: ${error.message}`, { status: 500 });
+      return new Response(`Error loading homepage: ${error.message}`, { status: 500 });
     }
   }
 
-  // 首页
-  try {
-    const recent = await getRecentApproved(10);
-    const posters = await Promise.all(
-      recent.map(async (item) => ({
-        ...item,
-        poster: await getPoster(item.imdb_id),
-      }))
-    );
-
-    const html = `
-      <html>
-        <head>
-          <title>Movie Trailers | Free Film & Music Clips</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        </head>
-        <body class="bg-gray-50">
-          <header class="bg-white shadow-sm">
-            <div class="container mx-auto p-4">
-              <div class="flex justify-between items-center">
-                <h1 class="text-2xl font-bold text-gray-800">
-                  <i class="fa fa-film mr-2 text-blue-600"></i>Movie Trailers
-                </h1>
-                <a href="/admin" class="text-gray-600 hover:text-gray-900 flex items-center">
-                  <i class="fa fa-lock mr-1"></i> Admin
-                </a>
-              </div>
-            </div>
-          </header>
-
-          <main class="container mx-auto p-4">
-            <section class="mb-8 bg-white p-6 rounded-lg shadow-sm">
-              <h2 class="text-xl font-semibold mb-4">Submit New Trailer</h2>
-              <form action="/submit" method="POST" onsubmit="return confirmSubmit()" class="space-y-4">
-                <div>
-                  <label for="imdb_id" class="block text-gray-700 mb-1">IMDb ID</label>
-                  <input 
-                    type="text" 
-                    id="imdb_id" 
-                    name="imdb_id" 
-                    placeholder="e.g. tt1234567" 
-                    class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  >
-                  <p class="text-sm text-gray-500 mt-1">
-                    Find this on IMDb - looks like "tt" followed by 7-8 numbers
-                  </p>
-                </div>
-                
-                <div>
-                  <label for="acfun_url" class="block text-gray-700 mb-1">AcFun URL</label>
-                  <input 
-                    type="url" 
-                    id="acfun_url" 
-                    name="acfun_url" 
-                    placeholder="https://www.acfun.cn/..." 
-                    class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  >
-                </div>
-                
-                <button 
-                  type="submit" 
-                  class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                >
-                  <i class="fa fa-paper-plane mr-1"></i> Submit
-                </button>
-              </form>
-            </section>
-
-            <section>
-              <h2 class="text-xl font-semibold mb-4">Recently Approved Trailers</h2>
-              
-              ${posters.length === 0 ? `
-                <div class="bg-gray-100 p-6 rounded-lg text-center">
-                  <i class="fa fa-info-circle text-2xl text-gray-500 mb-2"></i>
-                  <p>No approved trailers yet. Check back soon!</p>
-                </div>
-              ` : `
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                  ${posters.map(item => item.poster ? `
-                    <div class="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                      <div class="relative pb-[150%]">
-                        <img 
-                          src="${item.poster}" 
-                          alt="Poster for ${item.imdb_id}" 
-                          class="absolute inset-0 w-full h-full object-cover"
-                        >
-                      </div>
-                      <div class="p-3">
-                        <p class="text-sm font-medium text-gray-800 mb-1">${item.imdb_id}</p>
-                        <a 
-                          href="${item.acfun_url}" 
-                          target="_blank" 
-                          class="text-blue-600 text-sm hover:underline flex items-center"
-                        >
-                          <i class="fa fa-play-circle mr-1"></i> Watch on AcFun
-                        </a>
-                        <p class="text-xs text-gray-500 mt-2">
-                          Approved by ${item.reviewer}
-                        </p>
-                      </div>
-                    </div>
-                  ` : '').join("")}
-                </div>
-              `}
-            </section>
-          </main>
-
-          <footer class="bg-gray-800 text-white mt-8 py-6">
-            <div class="container mx-auto px-4 text-center text-sm">
-              <p>© ${new Date().getFullYear()} Movie Trailers. All submitted content is reviewed.</p>
-            </div>
-          </footer>
-
-          <script>
-            // 提交内容二次确认
-            function confirmSubmit() {
-              const imdbId = document.getElementById('imdb_id').value.trim();
-              const message = imdbId 
-                ? `Are you sure you want to submit the trailer for ${imdbId}?`
-                : 'Are you sure you want to submit this trailer?';
-              
-              return confirm(message);
-            }
-          </script>
-        </body>
-      </html>
-    `;
-
-    return new Response(html, { headers: { "Content-Type": "text/html" } });
-  } catch (error) {
-    return new Response(`Error loading page: ${error.message}`, { status: 500 });
-  }
+  // 404页面
+  return new Response("Not found", { status: 404 });
 }
 
 // 启动服务器
 const port = parseInt(Deno.env.get("PORT") || "8000");
 console.log(`Server running on http://localhost:${port}`);
-serve(handleRequest, { port });
+await serve(handleRequest, { port });
 
-// 优雅关闭
-window.addEventListener("unload", async () => {
-  console.log("Closing database connection...");
-  await closeDb();
+// 关闭时清理数据库连接
+window.addEventListener("unload", () => {
+  closeDb();
 });
-    
