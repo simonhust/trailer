@@ -448,7 +448,7 @@ async function handleRequest(req: Request) {
             <script>
               // 确认审核操作
               function confirmAction(id, action) {
-                const confirmed = confirm(`Are you sure you want to ${action} this submission?`);
+                const confirmed = confirm("Are you sure you want to " + action + " this submission?");
                 if (confirmed) {
                   const form = document.getElementById(\`form-\${id}\`);
                   if (form) {
