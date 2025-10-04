@@ -58,7 +58,7 @@ export async function initDb() {
     throw error;
   }
 
-  // 创建提交记录表 - 使用BIGINT类型确保能容纳大数字时间戳[4,8](@ref)
+  // 创建提交记录表,使用bigint
   await client.queryObject(`
     CREATE TABLE IF NOT EXISTS submissions (
       id BIGINT PRIMARY KEY,
