@@ -1,6 +1,5 @@
 import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
 import { crypto } from "https://deno.land/std@0.192.0/crypto/mod.ts";
-import { encodeBase64 } from "https://deno.land/std@0.192.0/encoding/base64.ts";
 
 // 数据库客户端实例
 export let client: Client;
@@ -59,25 +58,10 @@ export async function initDb() {
     throw error;
   }
 
-  // 创建序列用于自增ID[6](@ref)
-  try {
-    await client.queryObject(`
-      CREATE SEQUENCE IF NOT EXISTS submissions_id_seq
-      START WITH 1
-      INCREMENT BY 1
-      NO MINVALUE
-      NO MAXVALUE
-      CACHE 1
-    `);
-    console.log("Sequence 'submissions_id_seq' created or already exists");
-  } catch (error) {
-    console.warn("Sequence creation note:", error.message);
-  }
-
-  // 创建提交记录表 - 使用序列作为默认值[6,7](@ref)
+  // 创建提交记录表 - 使用BIGINT类型确保能容纳大数字时间戳[4,8](@ref)
   await client.queryObject(`
     CREATE TABLE IF NOT EXISTS submissions (
-      id INTEGER PRIMARY KEY DEFAULT nextval('submissions_id_seq'),
+      id BIGINT PRIMARY KEY,
       imdb_id TEXT NOT NULL,
       acfun_url TEXT NOT NULL,
       submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -113,7 +97,7 @@ export async function initDb() {
     )
   `);
 
-  // 初始化心跳记录 - 使用ON CONFLICT避免重复键错误[1](@ref)
+  // 初始化心跳记录 - 使用ON CONFLICT避免重复键错误
   try {
     await client.queryObject(`
       INSERT INTO system_heartbeat (id, last_heartbeat) 
@@ -209,7 +193,7 @@ export async function getPendingCount(): Promise<number> {
 }
 
 /**
- * 提交新的条目 - 修改为使用数据库自增ID[6,7](@ref)
+ * 提交新的条目 - 使用数字类型的ID（时间戳）[1,7](@ref)
  */
 export async function submitEntry(imdbId: string, acfunUrl: string) {
   const pendingCount = await getPendingCount();
@@ -219,25 +203,36 @@ export async function submitEntry(imdbId: string, acfunUrl: string) {
     throw new Error("Pending submissions limit reached (400). Try again later.");
   }
   
+  // 使用数字类型的时间戳作为ID，避免字符串转换问题[4](@ref)
+  const id = Date.now(); // 这是数字类型，不是字符串
+  
   try {
-    // 不再手动生成ID，使用数据库序列自增[6](@ref)
     await client.queryObject({
-      text: "INSERT INTO submissions (imdb_id, acfun_url) VALUES ($1, $2)",
-      args: [imdbId, acfunUrl],
+      text: "INSERT INTO submissions (id, imdb_id, acfun_url) VALUES ($1, $2, $3)",
+      args: [id, imdbId, acfunUrl], // id 是数字类型
     });
     
-    // 获取刚插入的记录的ID（可选）
-    const result = await client.queryObject({
-      text: "SELECT currval('submissions_id_seq') as last_id",
-      args: [],
-    });
-    
-    const lastId = result.rows[0].last_id;
-    console.log(`Submission created with ID: ${lastId}`);
-    
-    return { success: true, id: lastId };
+    console.log(`Submission created with numeric ID: ${id}`);
+    return { success: true, id };
   } catch (error) {
     console.error("Submit entry error:", error);
+    
+    // 如果是主键冲突错误，可以尝试使用不同的ID
+    if (error.message.includes("primary key") || error.message.includes("exists already")) {
+      console.log("ID conflict detected, generating new ID...");
+      const newId = Date.now() + Math.floor(Math.random() * 1000);
+      try {
+        await client.queryObject({
+          text: "INSERT INTO submissions (id, imdb_id, acfun_url) VALUES ($1, $2, $3)",
+          args: [newId, imdbId, acfunUrl],
+        });
+        console.log(`Submission created with new numeric ID: ${newId}`);
+        return { success: true, id: newId };
+      } catch (retryError) {
+        throw new Error(`Retry failed: ${retryError.message}`);
+      }
+    }
+    
     throw new Error(`Submission failed: ${error.message}`);
   }
 }
@@ -264,7 +259,7 @@ export async function verifyAdmin(username: string, password: string): Promise<{
   
   return {
     valid,
-    role: valid ? row.role as 'super' | 'secondary' : undefined,
+    role: valid ? row.rows[0].role as 'super' | 'secondary' : undefined,
     username: valid ? row.username : undefined,
   };
 }
