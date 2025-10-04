@@ -1,10 +1,31 @@
 import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
+import { crypto } from "https://deno.land/std@0.192.0/crypto/mod.ts";
+import { encodeBase64 } from "https://deno.land/std@0.192.0/encoding/base64.ts";
 
 // 数据库客户端实例
 let client: Client;
 // 心跳定时器ID
 let heartbeatInterval: number | undefined;
+
+/**
+ * 使用SHA-256进行密码哈希（替代bcrypt）
+ */
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex;
+}
+
+/**
+ * 验证密码
+ */
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  const newHash = await hashPassword(password);
+  return newHash === hash;
+}
 
 /**
  * 初始化数据库连接并创建必要的表结构
@@ -97,7 +118,7 @@ export async function initDb() {
     });
     
     if (hasAdmin.rows.length === 0) {
-      const hash = await bcrypt.hash(superPwd);
+      const hash = await hashPassword(superPwd);
       await client.queryObject({
         text: "INSERT INTO admins (username, password_hash, role) VALUES ($1, $2, 'super')",
         args: [superAdmin, hash],
@@ -164,6 +185,7 @@ function startHeartbeat() {
 export async function getPendingCount(): Promise<number> {
   const result = await client.queryObject({
     text: "SELECT COUNT(*) as count FROM submissions WHERE status = 'pending'",
+    args: [],
   });
   return Number(result.rows[0].count);
 }
@@ -206,7 +228,7 @@ export async function verifyAdmin(username: string, password: string): Promise<{
   }
   
   const row = result.rows[0];
-  const valid = await bcrypt.compare(password, row.password_hash);
+  const valid = await verifyPassword(password, row.password_hash);
   
   return {
     valid,
@@ -244,7 +266,7 @@ export async function addSecondaryAdmin(
   }
   
   // 加密密码并添加新管理员
-  const hash = await bcrypt.hash(newPassword);
+  const hash = await hashPassword(newPassword);
   await client.queryObject({
     text: "INSERT INTO admins (username, password_hash, role) VALUES ($1, $2, 'secondary')",
     args: [newUsername, hash],
@@ -257,6 +279,7 @@ export async function addSecondaryAdmin(
 export async function getAdmins() {
   const result = await client.queryObject({
     text: "SELECT username, role, created_at FROM admins ORDER BY created_at DESC",
+    args: [],
   });
   return result.rows;
 }
@@ -328,6 +351,7 @@ export async function getRecentApproved(limit = 10) {
 export async function getPendingSubmissions() {
   const result = await client.queryObject({
     text: "SELECT id, imdb_id, acfun_url, submitted_at FROM submissions WHERE status = 'pending' ORDER BY submitted_at ASC",
+    args: [],
   });
   return result.rows;
 }
