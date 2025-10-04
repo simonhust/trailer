@@ -77,7 +77,9 @@ async function handleRequest(req: Request) {
       const file = await Deno.readFile(`.${path}`);
       const contentType = path.endsWith(".js") 
         ? "application/javascript" 
-        : "text/css";
+        : path.endsWith(".css") 
+        ? "text/css" 
+        : "application/octet-stream";
       return new Response(file, {
         headers: { "Content-Type": contentType },
       });
@@ -254,25 +256,29 @@ async function handleRequest(req: Request) {
                           </td>
                           <td class="py-2 px-4 border-b">
                             <div class="inline-flex gap-2">
-                              <button 
-                                onclick="confirmAction(${sub.id}, 'approve')"
-                                class="bg-green-100 text-green-800 px-3 py-1 rounded hover:bg-green-200"
-                              >
-                                <i class="fa fa-check mr-1"></i>Approve
-                              </button>
-                              <button 
-                                onclick="confirmAction(${sub.id}, 'reject')"
-                                class="bg-red-100 text-red-800 px-3 py-1 rounded hover:bg-red-200"
-                              >
-                                <i class="fa fa-times mr-1"></i>Reject
-                              </button>
+                              <form id="form-${sub.id}" method="POST" class="inline">
+                                <input type="hidden" name="id" value="${sub.id}">
+                                <input type="hidden" name="confirmed" value="true">
+                                <button 
+                                  type="submit"
+                                  name="action"
+                                  value="approve"
+                                  class="bg-green-100 text-green-800 px-3 py-1 rounded hover:bg-green-200"
+                                  onclick="return confirm('Are you sure you want to approve this submission?')"
+                                >
+                                  <i class="fa fa-check mr-1"></i>Approve
+                                </button>
+                                <button 
+                                  type="submit"
+                                  name="action"
+                                  value="reject"
+                                  class="bg-red-100 text-red-800 px-3 py-1 rounded hover:bg-red-200"
+                                  onclick="return confirm('Are you sure you want to reject this submission?')"
+                                >
+                                  <i class="fa fa-times mr-1"></i>Reject
+                                </button>
+                              </form>
                             </div>
-                            <!-- 隐藏的确认表单 -->
-                            <form id="form-${sub.id}" method="POST" class="hidden">
-                              <input type="hidden" name="id" value="${sub.id}">
-                              <input type="hidden" name="action" value="">
-                              <input type="hidden" name="confirmed" value="true">
-                            </form>
                           </td>
                         </tr>
                       `).join("")}
@@ -289,56 +295,75 @@ async function handleRequest(req: Request) {
                   
                   <div class="bg-white p-4 rounded-lg border mb-6">
                     <h3 class="font-medium mb-3">Add New Secondary Admin</h3>
-                    <form id="addAdminForm" class="space-y-4">
+                    <form action="/admin/api/admins" method="POST" class="space-y-4">
                       <div>
                         <label class="block text-sm font-medium text-gray-700">Username</label>
-                        <input type="text" name="username" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                        <input type="text" name="username" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
                       </div>
                       <div>
                         <label class="block text-sm font-medium text-gray-700">Password</label>
-                        <input type="password" name="password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                        <input type="password" name="password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
                       </div>
                       <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
                         <i class="fa fa-plus mr-2"></i>Add Admin
                       </button>
                     </form>
-                    <div id="adminMessage" class="mt-2 hidden"></div>
                   </div>
                   
                   <div class="bg-white rounded-lg border overflow-hidden">
                     <h3 class="font-medium p-4 border-b">Current Admins</h3>
-                    <table class="min-w-full">
-                      <thead class="bg-gray-100">
-                        <tr>
-                          <th class="py-2 px-4 border-b">Username</th>
-                          <th class="py-2 px-4 border-b">Role</th>
-                          <th class="py-2 px-4 border-b">Created At</th>
-                        </tr>
-                      </thead>
-                      <tbody id="adminList">
-                        <!-- Admin list will be loaded via JavaScript -->
-                      </tbody>
-                    </table>
+                    <div id="adminList" class="p-4">
+                      <!-- Admin list will be loaded via JavaScript -->
+                      <p class="text-gray-500">Loading admin list...</p>
+                    </div>
                   </div>
                 </section>
               ` : ""}
             </main>
 
             <script>
-              // 确认操作函数 - 修复模板字符串和语法
-              function confirmAction(id, action) {
-                const actionText = action === 'approve' ? 'approve' : 'reject';
-                const confirmation = confirm('Are you sure you want to ' + actionText + ' this submission?');
-                if (confirmation) {
-                  const form = document.getElementById(`form-${id}`);
-                  if (form) {
-                    form.querySelector('input[name="action"]').value = action;
-                    form.submit();
+              // 加载管理员列表
+              async function loadAdmins() {
+                try {
+                  const response = await fetch('/admin/api/admins');
+                  if (response.ok) {
+                    const admins = await response.json();
+                    const adminList = document.getElementById('adminList');
+                    if (admins.length > 0) {
+                      adminList.innerHTML = \`
+                        <table class="min-w-full">
+                          <thead class="bg-gray-100">
+                            <tr>
+                              <th class="py-2 px-4 border-b">Username</th>
+                              <th class="py-2 px-4 border-b">Role</th>
+                              <th class="py-2 px-4 border-b">Created At</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            \${admins.map(admin => \`
+                              <tr>
+                                <td class="py-2 px-4 border-b">\${admin.username}</td>
+                                <td class="py-2 px-4 border-b">\${admin.role}</td>
+                                <td class="py-2 px-4 border-b">\${new Date(admin.created_at).toLocaleString()}</td>
+                              </tr>
+                            \`).join('')}
+                          </tbody>
+                        </table>
+                      \`;
+                    } else {
+                      adminList.innerHTML = '<p class="text-gray-500">No admins found.</p>';
+                    }
                   }
+                } catch (error) {
+                  console.error('Error loading admins:', error);
                 }
               }
+
+              // 如果是超级管理员，加载管理员列表
+              if (${admin.role === "super"}) {
+                loadAdmins();
+              }
             </script>
-            <script src="/static/admin.js"></script>
           </body>
         </html>
       `;
@@ -406,7 +431,7 @@ async function handleRequest(req: Request) {
                 `).join("")}
               </div>
               
-              ${recent.length === 0 ? `
+              ${posters.length === 0 ? `
                 <div class="mt-8 text-center bg-white p-6 rounded-lg">
                   <i class="fa fa-info-circle text-blue-500 text-3xl mb-2"></i>
                   <p>No approved submissions yet</p>
@@ -438,9 +463,11 @@ async function handleRequest(req: Request) {
 // 启动服务器
 const port = parseInt(Deno.env.get("PORT") || "8000");
 console.log(`Server running on http://localhost:${port}`);
-await serve(handleRequest, { port });
 
-// 关闭时清理数据库连接
-window.addEventListener("unload", () => {
+// 使用正确的serve函数调用
+serve(handleRequest, { port });
+
+// 正确的关闭事件监听
+globalThis.addEventListener("unload", () => {
   closeDb();
 });
