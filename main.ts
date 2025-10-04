@@ -67,7 +67,14 @@ async function authenticateAdmin(req: Request): Promise<{
   if (scheme !== "Basic" || !encoded) return { valid: false };
 
   try {
-    const decoded = new TextDecoder().decode(atob(encoded));
+    // 修复：正确处理Base64解码为字符串
+    const binaryString = atob(encoded);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const decoded = new TextDecoder().decode(bytes);
+    
     const [username, password] = decoded.split(":");
     
     if (!username || !password) return { valid: false };
