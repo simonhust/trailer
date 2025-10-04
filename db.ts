@@ -101,10 +101,12 @@ export async function initDb() {
   // 初始化心跳记录
   try {
     await client.queryObject(`
-      INSERT INTO system_heartbeat (id) VALUES (1)
+      INSERT INTO system_heartbeat (id, last_heartbeat) 
+      VALUES (1, CURRENT_TIMESTAMP)
+      ON CONFLICT (id) DO UPDATE SET last_heartbeat = CURRENT_TIMESTAMP
     `);
   } catch (error) {
-    console.warn("Heartbeat table already initialized:", error);
+    console.warn("Heartbeat table initialization note:", error.message);
   }
 
   // 初始化超级管理员（如果不存在）
