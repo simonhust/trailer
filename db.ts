@@ -38,10 +38,10 @@ export async function initDb() {
     throw error;
   }
 
-  // 创建提交记录表（待审核）
+  // 创建提交记录表（待审核）- 修复IDENTITY语法问题
   await client.queryObject(`
     CREATE TABLE IF NOT EXISTS submissions (
-      id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
       imdb_id TEXT NOT NULL,
       acfun_url TEXT NOT NULL CHECK (acfun_url LIKE 'https://%'),
       submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -177,7 +177,7 @@ export async function getPendingCount(): Promise<number> {
   const result = await client.queryObject({
     text: "SELECT COUNT(*) as count FROM submissions WHERE status = 'pending'",
   });
-  return result.rows[0].count as number;
+  return Number(result.rows[0].count);
 }
 
 /**
@@ -214,13 +214,13 @@ export async function verifyAdmin(username: string, password: string): Promise<{
     return { valid: false };
   }
   
-  const { password_hash, role, username: dbUsername } = result.rows[0];
-  const valid = await bcrypt.compare(password, password_hash);
+  const row = result.rows[0];
+  const valid = await bcrypt.compare(password, row.password_hash);
   
   return {
     valid,
-    role: valid ? role as 'super' | 'secondary' : undefined,
-    username: valid ? dbUsername : undefined,
+    role: valid ? row.role as 'super' | 'secondary' : undefined,
+    username: valid ? row.username : undefined,
   };
 }
 
@@ -288,7 +288,9 @@ export async function reviewSubmission(
     throw new Error("Submission not found or already reviewed");
   }
   
-  const { imdb_id, acfun_url } = submission.rows[0];
+  const row = submission.rows[0];
+  const imdb_id = row.imdb_id;
+  const acfun_url = row.acfun_url;
   
   // 开启事务确保数据一致性
   try {
@@ -365,4 +367,3 @@ export async function closeDb() {
     console.log("Database connection closed");
   }
 }
-    
