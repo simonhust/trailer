@@ -11,6 +11,7 @@ import {
   verifyAdmin,
   addSecondaryAdmin,
   getAdmins,
+  client
 } from "./db.ts";
 
 // 加载环境变量
