@@ -484,10 +484,8 @@ async function handleRequest(req: Request) {
                 const confirmed = confirm(`Are you sure you want to ${action} this submission?`);
                 if (confirmed) {
                   const form = document.getElementById(`form-${id}`);
-                  if (form) {
-                    form.querySelector('input[name="action"]').value = action;
-                    form.submit();
-                  }
+                  form.querySelector('input[name="action"]').value = action;
+                  form.submit();
                 }
               }
             </script>
