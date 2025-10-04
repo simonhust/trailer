@@ -41,29 +41,33 @@ async function getPoster(imdbId: string) {
   }
 }
 
-// 管理员身份验证
+// 管理员身份验证（基于Cookie）
 async function authenticateAdmin(req: Request): Promise<{
   valid: boolean;
   username?: string;
   role?: 'super' | 'secondary';
 }> {
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) return { valid: false };
+  // 从cookie获取登录状态
+  const cookie = req.headers.get("Cookie") || "";
+  const adminMatch = cookie.match(/admin=([^;]+)/);
+  if (!adminMatch) return { valid: false };
 
-  const [scheme, encoded] = authHeader.split(" ");
-  if (scheme !== "Basic" || !encoded) return { valid: false };
+  const username = adminMatch[1];
+  // 验证用户是否存在
+  const result = await client.queryObject({
+    text: "SELECT username, role FROM admins WHERE username = $1",
+    args: [username],
+  });
 
-  try {
-    const decoded = new TextDecoder().decode(atob(encoded));
-    const [username, password] = decoded.split(":");
-    
-    if (!username || !password) return { valid: false };
-    
-    return await verifyAdmin(username, password);
-  } catch (error) {
-    console.error("Admin authentication error:", error);
+  if (result.rows.length === 0) {
     return { valid: false };
   }
+
+  return {
+    valid: true,
+    username: result.rows[0].username,
+    role: result.rows[0].role as 'super' | 'secondary'
+  };
 }
 
 // 处理所有HTTP请求
@@ -84,6 +88,123 @@ async function handleRequest(req: Request) {
     } catch {
       return new Response("Not found", { status: 404 });
     }
+  }
+
+  // 提交新条目的页面
+  if (path === "/submit") {
+    // 处理表单提交
+    if (req.method === "POST") {
+      try {
+        const formData = await req.formData();
+        const imdbId = formData.get("imdb_id")?.toString().trim();
+        const acfunUrl = formData.get("acfun_url")?.toString().trim();
+
+        if (!imdbId || !acfunUrl) {
+          return new Response("IMDb ID and AcFun URL are required", { status: 400 });
+        }
+
+        await submitEntry(imdbId, acfunUrl);
+        return new Response(`
+          <html>
+            <body>
+              <p>Submission successful! Redirecting...</p>
+              <script>setTimeout(() => window.location.href = '/submit', 2000)</script>
+            </body>
+          </html>
+        `, { headers: { "Content-Type": "text/html" } });
+      } catch (error) {
+        return new Response(`Error: ${error.message}`, { status: 400 });
+      }
+    }
+
+    // 显示提交表单
+    return new Response(`
+      <html>
+        <head>
+          <title>Submit Trailer</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+        </head>
+        <body class="container mx-auto p-4">
+          <div class="mb-4">
+            <a href="/admin/login" class="text-blue-600 hover:underline">
+              Admin Login
+            </a>
+          </div>
+          <h1 class="text-2xl font-bold mb-4">Submit New Trailer</h1>
+          <form method="POST" class="space-y-4">
+            <div>
+              <label class="block">IMDb ID:</label>
+              <input type="text" name="imdb_id" required 
+                    class="border p-2 w-full" placeholder="e.g. tt1234567">
+            </div>
+            <div>
+              <label class="block">AcFun URL:</label>
+              <input type="url" name="acfun_url" required 
+                    class="border p-2 w-full" placeholder="https://www.acfun.cn/...">
+            </div>
+            <button type="submit" class="bg-blue-500 text-white p-2 rounded">Submit</button>
+          </form>
+        </body>
+      </html>
+    `, { headers: { "Content-Type": "text/html" } });
+  }
+
+  // 管理员登录页面
+  if (path === "/admin/login") {
+    if (req.method === "POST") {
+      const formData = await req.formData();
+      const username = formData.get("username")?.toString();
+      const password = formData.get("password")?.toString();
+
+      if (!username || !password) {
+        return new Response("Username and password are required", { status: 400 });
+      }
+
+      const result = await verifyAdmin(username, password);
+      if (result.valid) {
+        // 设置登录Cookie
+        const headers = new Headers({
+          "Location": "/admin",
+          "Set-Cookie": `admin=${username}; HttpOnly; Path=/admin; Max-Age=86400`
+        });
+        return new Response(null, { status: 302, headers });
+      } else {
+        return new Response(`
+          <html>
+            <body>
+              <p>Invalid credentials</p>
+              <a href="/admin/login">Try again</a>
+            </body>
+          </html>
+        `, { headers: { "Content-Type": "text/html" } });
+      }
+    }
+
+    // 显示登录表单
+    return new Response(`
+      <html>
+        <head>
+          <title>Admin Login</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+        </head>
+        <body class="container mx-auto p-4">
+          <h1 class="text-2xl font-bold mb-4">Admin Login</h1>
+          <form method="POST" class="space-y-4 w-64">
+            <div>
+              <label class="block">Username:</label>
+              <input type="text" name="username" required class="border p-2 w-full">
+            </div>
+            <div>
+              <label class="block">Password:</label>
+              <input type="password" name="password" required class="border p-2 w-full">
+            </div>
+            <button type="submit" class="bg-blue-500 text-white p-2 rounded w-full">
+              Login
+            </button>
+          </form>
+        </body>
+      </html>
+    `, { headers: { "Content-Type": "text/html" } });
   }
 
   // API: 通过IMDb ID获取AcFun URL
@@ -115,10 +236,7 @@ async function handleRequest(req: Request) {
   if (path === "/admin/api/admins") {
     const admin = await authenticateAdmin(req);
     if (!admin.valid) {
-      return new Response("Unauthorized", {
-        status: 401,
-        headers: { "WWW-Authenticate": 'Basic realm="Admin Area"' },
-      });
+      return new Response("Unauthorized", { status: 401 });
     }
 
     // 只有超级管理员可以管理管理员
@@ -165,10 +283,9 @@ async function handleRequest(req: Request) {
   if (path === "/admin") {
     const admin = await authenticateAdmin(req);
     if (!admin.valid) {
-      return new Response("Unauthorized", {
-        status: 401,
-        headers: { "WWW-Authenticate": 'Basic realm="Admin Area"' },
-      });
+      // 未登录则重定向到登录页
+      const headers = new Headers({ "Location": "/admin/login" });
+      return new Response(null, { status: 302, headers });
     }
 
     // 处理审核操作
@@ -289,34 +406,36 @@ async function handleRequest(req: Request) {
                   
                   <div id="adminMessage" class="mt-2 hidden"></div>
                   
-                  <div class="bg-white p-4 rounded-lg border mb-6">
+                  <div class="bg-white p-4 rounded-lg mb-6">
                     <h3 class="font-medium mb-3">Add Secondary Admin</h3>
-                    <form id="addAdminForm" class="space-y-4">
+                    <form id="addAdminForm" class="space-y-3">
                       <div>
-                        <label class="block text-sm font-medium text-gray-700">Username</label>
-                        <input type="text" name="username" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                        <label class="block text-sm">Username</label>
+                        <input type="text" name="username" required 
+                              class="border p-2 w-full md:w-1/3">
                       </div>
                       <div>
-                        <label class="block text-sm font-medium text-gray-700">Password</label>
-                        <input type="password" name="password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                        <label class="block text-sm">Password</label>
+                        <input type="password" name="password" required 
+                              class="border p-2 w-full md:w-1/3">
                       </div>
-                      <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
-                        <i class="fa fa-plus mr-2"></i>Add Admin
+                      <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">
+                        <i class="fa fa-plus mr-1"></i>Add Admin
                       </button>
                     </form>
                   </div>
                   
-                  <div class="bg-white rounded-lg border overflow-hidden">
-                    <h3 class="font-medium p-4 bg-gray-50 border-b">Current Administrators</h3>
-                    <table class="min-w-full divide-y divide-gray-200">
-                      <thead class="bg-gray-50">
+                  <div class="bg-white rounded-lg overflow-hidden">
+                    <h3 class="font-medium p-4 border-b">Existing Admins</h3>
+                    <table class="min-w-full">
+                      <thead class="bg-gray-100">
                         <tr>
-                          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
-                          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+                          <th class="py-2 px-4 border-b text-left">Username</th>
+                          <th class="py-2 px-4 border-b text-left">Role</th>
+                          <th class="py-2 px-4 border-b text-left">Created At</th>
                         </tr>
                       </thead>
-                      <tbody id="adminList" class="bg-white divide-y divide-gray-200">
+                      <tbody id="adminList">
                         <!-- Admin list will be loaded via JavaScript -->
                       </tbody>
                     </table>
@@ -327,9 +446,9 @@ async function handleRequest(req: Request) {
 
             <script src="/static/admin.js"></script>
             <script>
-              // 确认操作函数 - 修复模板字符串冲突问题
+              // 确认审核操作
               function confirmAction(id, action) {
-                const confirmed = confirm('Are you sure you want to ' + action + ' this submission?');
+                const confirmed = confirm(`Are you sure you want to ${action} this submission?`);
                 if (confirmed) {
                   const form = document.getElementById(\`form-\${id}\`);
                   if (form) {
@@ -344,106 +463,104 @@ async function handleRequest(req: Request) {
       `;
       
       return new Response(html, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
+        headers: { "Content-Type": "text/html" },
       });
     } catch (error) {
-      return new Response(`Error loading admin page: ${error.message}`, { status: 500 });
+      return new Response(`Error loading admin panel: ${error.message}`, { status: 500 });
     }
   }
 
   // 首页 - 显示最近通过的条目
-  if (path === "/" || path === "") {
-    try {
-      const recent = await getRecentApproved(20);
-      
-      // 并行获取所有海报
-      const entriesWithPosters = await Promise.all(
-        recent.map(async (entry) => ({
-          ...entry,
-          poster: await getPoster(entry.imdb_id),
-        }))
-      );
-      
-      const html = `
-        <html>
-          <head>
-            <title>Movie Trailers</title>
-            <script src="https://cdn.tailwindcss.com"></script>
-            <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
-          </head>
-          <body class="bg-gray-100">
-            <header class="bg-gray-800 text-white p-6">
-              <div class="container mx-auto">
-                <h1 class="text-3xl font-bold">
-                  <i class="fa fa-film mr-2"></i>Movie Trailers Archive
-                </h1>
-                <p class="mt-2 text-gray-300">Latest approved movie trailers from AcFun</p>
+  try {
+    const recent = await getRecentApproved(20);
+    const html = `
+      <html>
+        <head>
+          <title>Movie Trailers</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+        </head>
+        <body class="bg-gray-50">
+          <header class="bg-gray-800 text-white p-4">
+            <div class="container mx-auto">
+              <h1 class="text-2xl font-bold">
+                <i class="fa fa-film mr-2"></i>Movie Trailers Archive
+              </h1>
+              <div class="mt-2">
+                <a href="/submit" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded inline-block">
+                  <i class="fa fa-plus mr-1"></i>Submit New Trailer
+                </a>
+                <a href="/admin/login" class="ml-2 bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded inline-block">
+                  <i class="fa fa-lock mr-1"></i>Admin Login
+                </a>
               </div>
-            </header>
+            </div>
+          </header>
 
-            <main class="container mx-auto p-4">
-              <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 mt-6">
-                ${entriesWithPosters.map(entry => `
-                  <div class="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
-                    ${entry.poster ? `
-                      <img src="${entry.poster}" alt="Poster for ${entry.imdb_id}" class="w-full h-64 object-cover">
-                    ` : `
-                      <div class="w-full h-64 bg-gray-200 flex items-center justify-center">
-                        <i class="fa fa-film text-5xl text-gray-400"></i>
-                      </div>
-                    `}
-                    <div class="p-4">
-                      <div class="text-sm text-gray-500 mb-2">IMDb ID: ${entry.imdb_id}</div>
-                      <a href="${entry.acfun_url}" target="_blank" class="text-blue-600 hover:underline mb-2 block">
-                        <i class="fa fa-external-link mr-1"></i>View on AcFun
-                      </a>
-                      <div class="text-xs text-gray-400">
-                        Approved on ${new Date(entry.approved_at).toLocaleDateString()}
-                        <br>
-                        By ${entry.reviewer}
+          <main class="container mx-auto p-4">
+            <h2 class="text-xl font-semibold mb-4">Recently Approved Trailers</h2>
+            
+            ${recent.length === 0 ? `
+              <div class="bg-yellow-100 p-4 rounded">
+                <i class="fa fa-info-circle text-yellow-600 mr-2"></i>
+                No approved trailers yet
+              </div>
+            ` : `
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                ${await Promise.all(recent.map(async (item) => {
+                  const poster = await getPoster(item.imdb_id);
+                  return `
+                    <div class="bg-white rounded-lg overflow-hidden shadow hover:shadow-md transition-shadow">
+                      ${poster ? `
+                        <div class="h-48 bg-gray-200 flex items-center justify-center">
+                          <img src="${poster}" alt="Poster for ${item.imdb_id}" 
+                               class="h-full object-cover">
+                        </div>
+                      ` : `
+                        <div class="h-48 bg-gray-200 flex items-center justify-center">
+                          <i class="fa fa-film text-5xl text-gray-400"></i>
+                        </div>
+                      `}
+                      <div class="p-4">
+                        <div class="font-medium mb-2">IMDb ID: ${item.imdb_id}</div>
+                        <a href="${item.acfun_url}" target="_blank" 
+                           class="text-blue-600 hover:underline mb-2 inline-block">
+                          <i class="fa fa-external-link mr-1"></i>View on AcFun
+                        </a>
+                        <div class="text-sm text-gray-500">
+                          Approved: ${new Date(item.approved_at).toLocaleString()}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                `).join("")}
+                  `;
+                }))}
               </div>
-
-              ${entriesWithPosters.length === 0 ? `
-                <div class="mt-8 text-center bg-white p-8 rounded-lg">
-                  <i class="fa fa-info-circle text-4xl text-blue-500 mb-4"></i>
-                  <h3 class="text-xl font-medium">No trailers available</h3>
-                  <p class="mt-2 text-gray-600">Check back later for approved movie trailers</p>
-                </div>
-              ` : ""}
-            </main>
-
-            <footer class="bg-gray-800 text-white p-6 mt-12">
-              <div class="container mx-auto text-center text-gray-400 text-sm">
-                <p>&copy; ${new Date().getFullYear()} Movie Trailers Archive</p>
-              </div>
-            </footer>
-          </body>
-        </html>
-      `;
-      
-      return new Response(html, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    } catch (error) {
-      return new Response(`Error loading homepage: ${error.message}`, { status: 500 });
-    }
+            `}
+          </main>
+        </body>
+      </html>
+    `;
+    
+    return new Response(html, {
+      headers: { "Content-Type": "text/html" },
+    });
+  } catch (error) {
+    return new Response(`Error loading page: ${error.message}`, { status: 500 });
   }
-
-  // 404页面
-  return new Response("Not found", { status: 404 });
 }
 
 // 启动服务器
-const port = parseInt(Deno.env.get("PORT") || "8000");
-console.log(`Server running on http://localhost:${port}`);
+serve(handleRequest);
 
-await serve(handleRequest, { port });
+// 优雅关闭
+Deno.addSignalListener("SIGINT", async () => {
+  console.log("Closing database connection...");
+  await closeDb();
+  Deno.exit(0);
+});
 
-// 关闭时清理数据库连接
-window.addEventListener("unload", () => {
-  closeDb();
+Deno.addSignalListener("SIGTERM", async () => {
+  console.log("Closing database connection...");
+  await closeDb();
+  Deno.exit(0);
 });
