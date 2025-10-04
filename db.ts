@@ -245,23 +245,33 @@ export async function verifyAdmin(username: string, password: string): Promise<{
   role?: 'super' | 'secondary';
   username?: string;
 }> {
-  const result = await client.queryObject({
-    text: "SELECT username, password_hash, role FROM admins WHERE username = $1",
-    args: [username],
-  });
-  
-  if (result.rows.length === 0) {
+  try {
+    const result = await client.queryObject({
+      text: "SELECT username, password_hash, role FROM admins WHERE username = $1",
+      args: [username],
+    });
+    
+    // 添加详细的空结果检查
+    if (result.rows.length === 0) {
+      console.log(`Admin user "${username}" not found`);
+      return { valid: false };
+    }
+
+    const row = result.rows[0];
+    
+    // 验证密码哈希
+    const isValid = await verifyPassword(password, row.password_hash);
+    
+    return {
+      valid: isValid,
+      role: isValid ? (row.role as 'super' | 'secondary') : undefined,
+      username: isValid ? row.username : undefined
+    };
+    
+  } catch (error) {
+    console.error("Error verifying admin:", error);
     return { valid: false };
   }
-  
-  const row = result.rows[0];
-  const valid = await verifyPassword(password, row.password_hash);
-  
-  return {
-    valid,
-    role: valid ? row.rows[0].role as 'super' | 'secondary' : undefined,
-    username: valid ? row.username : undefined,
-  };
 }
 
 /**
