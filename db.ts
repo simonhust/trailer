@@ -38,14 +38,14 @@ export async function initDb() {
     throw error;
   }
 
-  // 创建提交记录表（待审核）- 修复IDENTITY语法问题
+  // 创建提交记录表（待审核）- 简化CrateDB兼容语法
   await client.queryObject(`
     CREATE TABLE IF NOT EXISTS submissions (
-      id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+      id INTEGER PRIMARY KEY,
       imdb_id TEXT NOT NULL,
-      acfun_url TEXT NOT NULL CHECK (acfun_url LIKE 'https://%'),
-      submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected'))
+      acfun_url TEXT NOT NULL,
+      submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      status TEXT DEFAULT 'pending'
     )
   `);
 
@@ -53,8 +53,8 @@ export async function initDb() {
   await client.queryObject(`
     CREATE TABLE IF NOT EXISTS trailers (
       imdb_id TEXT PRIMARY KEY,
-      acfun_url TEXT NOT NULL CHECK (acfun_url LIKE 'https://%'),
-      approved_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      acfun_url TEXT NOT NULL,
+      approved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       reviewer TEXT NOT NULL
     )
   `);
@@ -64,18 +64,16 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS admins (
       username TEXT PRIMARY KEY,
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('super', 'secondary')),
-      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      role TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
   // 创建系统表用于心跳检测
   await client.queryObject(`
     CREATE TABLE IF NOT EXISTS system_heartbeat (
-      id INTEGER PRIMARY KEY DEFAULT 1,
-      last_heartbeat TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      -- 确保表中只有一条记录
-      CHECK (id = 1)
+      id INTEGER PRIMARY KEY,
+      last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -83,20 +81,10 @@ export async function initDb() {
   try {
     await client.queryObject(`
       INSERT INTO system_heartbeat (id) VALUES (1)
-      ON CONFLICT (id) DO NOTHING
     `);
   } catch (error) {
     console.warn("Heartbeat table already initialized:", error);
   }
-
-  // 创建索引优化查询性能
-  await client.queryObject(`
-    CREATE INDEX IF NOT EXISTS idx_submissions_status ON submissions (status)
-  `);
-  
-  await client.queryObject(`
-    CREATE INDEX IF NOT EXISTS idx_trailers_approved_at ON trailers (approved_at DESC)
-  `);
 
   // 初始化超级管理员（如果不存在）
   const superAdmin = Deno.env.get("ADMIN_USERNAME");
@@ -191,9 +179,12 @@ export async function submitEntry(imdbId: string, acfunUrl: string) {
     throw new Error("Pending submissions limit reached (400). Try again later.");
   }
   
+  // 生成唯一ID（使用时间戳和随机数）
+  const id = Date.now() + Math.floor(Math.random() * 1000);
+  
   await client.queryObject({
-    text: "INSERT INTO submissions (imdb_id, acfun_url) VALUES ($1, $2)",
-    args: [imdbId, acfunUrl],
+    text: "INSERT INTO submissions (id, imdb_id, acfun_url) VALUES ($1, $2, $3)",
+    args: [id, imdbId, acfunUrl],
   });
 }
 
