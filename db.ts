@@ -3,7 +3,7 @@ import { crypto } from "https://deno.land/std@0.192.0/crypto/mod.ts";
 import { encodeBase64 } from "https://deno.land/std@0.192.0/encoding/base64.ts";
 
 // 数据库客户端实例
-let client: Client;
+export let client: Client;
 // 心跳定时器ID
 let heartbeatInterval: number | undefined;
 
