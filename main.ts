@@ -77,15 +77,165 @@ async function handleRequest(req: Request) {
       const file = await Deno.readFile(`.${path}`);
       const contentType = path.endsWith(".js") 
         ? "application/javascript" 
-        : path.endsWith(".css") 
-        ? "text/css" 
-        : "application/octet-stream";
+        : "text/css";
       return new Response(file, {
         headers: { "Content-Type": contentType },
       });
     } catch {
       return new Response("Not found", { status: 404 });
     }
+  }
+
+  // 首页路由
+  if (path === "/") {
+    // 处理提交表单的POST请求
+    if (req.method === "POST") {
+      try {
+        const formData = await req.formData();
+        const imdbId = formData.get("imdbId") as string;
+        const acfunUrl = formData.get("acfunUrl") as string;
+
+        if (!imdbId || !acfunUrl) {
+          return new Response(JSON.stringify({ error: "IMDb ID and AcFun URL are required" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        await submitEntry(imdbId, acfunUrl);
+        return new Response(JSON.stringify({ success: true, message: "Submission received. Waiting for review." }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    // 显示首页HTML
+    const html = `
+      <html>
+        <head>
+          <title>Movie Trailer Link Manager</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+          <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+        </head>
+        <body class="bg-gray-100 min-h-screen">
+          <header class="bg-gray-800 text-white p-6">
+            <div class="container mx-auto">
+              <h1 class="text-3xl font-bold">
+                <i class="fa fa-film mr-3"></i>Movie Trailer Link Manager
+              </h1>
+              <p class="mt-2 text-gray-300">Submit and find AcFun trailer links by IMDb ID</p>
+            </div>
+          </header>
+
+          <main class="container mx-auto p-6">
+            <section class="bg-white rounded-lg shadow-md p-6 mb-8">
+              <h2 class="text-2xl font-semibold mb-4">
+                <i class="fa fa-paper-plane mr-2"></i>Submit New Trailer Link
+              </h2>
+              
+              <form id="submissionForm" class="space-y-4">
+                <div>
+                  <label for="imdbId" class="block text-gray-700 mb-1">IMDb ID</label>
+                  <input 
+                    type="text" 
+                    id="imdbId" 
+                    name="imdbId" 
+                    placeholder="e.g., tt1234567" 
+                    pattern="^tt\d+$"
+                    title="IMDb ID must start with 'tt' followed by numbers"
+                    required
+                    class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                </div>
+                
+                <div>
+                  <label for="acfunUrl" class="block text-gray-700 mb-1">AcFun Trailer URL</label>
+                  <input 
+                    type="url" 
+                    id="acfunUrl" 
+                    name="acfunUrl" 
+                    placeholder="https://www.acfun.cn/..." 
+                    required
+                    class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                </div>
+                
+                <button 
+                  type="submit" 
+                  class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                >
+                  <i class="fa fa-check mr-2"></i>Submit for Review
+                </button>
+              </form>
+              
+              <div id="message" class="mt-4 hidden p-3 rounded"></div>
+            </section>
+
+            <section class="bg-white rounded-lg shadow-md p-6">
+              <h2 class="text-2xl font-semibold mb-4">
+                <i class="fa fa-key mr-2"></i>Admin Access
+              </h2>
+              <p class="mb-4">Are you an administrator? Access the admin panel to review submissions.</p>
+              <a 
+                href="/admin" 
+                class="inline-flex items-center bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                <i class="fa fa-lock mr-2"></i>Admin Panel
+              </a>
+            </section>
+          </main>
+
+          <footer class="bg-gray-800 text-white p-6 mt-12">
+            <div class="container mx-auto text-center">
+              <p>&copy; 2025 Movie Trailer Link Manager</p>
+            </div>
+          </footer>
+
+          <script>
+            // 处理表单提交
+            document.getElementById('submissionForm').addEventListener('submit', async (e) => {
+              e.preventDefault();
+              const messageEl = document.getElementById('message');
+              const formData = new FormData(e.target);
+              
+              try {
+                const response = await fetch('/', {
+                  method: 'POST',
+                  body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                  messageEl.textContent = data.message;
+                  messageEl.className = 'mt-4 p-3 rounded bg-green-100 text-green-800';
+                  e.target.reset();
+                } else {
+                  messageEl.textContent = data.error;
+                  messageEl.className = 'mt-4 p-3 rounded bg-red-100 text-red-800';
+                }
+              } catch (error) {
+                messageEl.textContent = 'An error occurred while submitting. Please try again.';
+                messageEl.className = 'mt-4 p-3 rounded bg-red-100 text-red-800';
+              }
+              
+              // 5秒后隐藏消息
+              setTimeout(() => {
+                messageEl.className = 'mt-4 hidden p-3 rounded';
+              }, 5000);
+            });
+          </script>
+        </body>
+      </html>
+    `;
+    return new Response(html, {
+      headers: { "Content-Type": "text/html" },
+    });
   }
 
   // API: 通过IMDb ID获取AcFun URL
@@ -256,29 +406,25 @@ async function handleRequest(req: Request) {
                           </td>
                           <td class="py-2 px-4 border-b">
                             <div class="inline-flex gap-2">
-                              <form id="form-${sub.id}" method="POST" class="inline">
-                                <input type="hidden" name="id" value="${sub.id}">
-                                <input type="hidden" name="confirmed" value="true">
-                                <button 
-                                  type="submit"
-                                  name="action"
-                                  value="approve"
-                                  class="bg-green-100 text-green-800 px-3 py-1 rounded hover:bg-green-200"
-                                  onclick="return confirm('Are you sure you want to approve this submission?')"
-                                >
-                                  <i class="fa fa-check mr-1"></i>Approve
-                                </button>
-                                <button 
-                                  type="submit"
-                                  name="action"
-                                  value="reject"
-                                  class="bg-red-100 text-red-800 px-3 py-1 rounded hover:bg-red-200"
-                                  onclick="return confirm('Are you sure you want to reject this submission?')"
-                                >
-                                  <i class="fa fa-times mr-1"></i>Reject
-                                </button>
-                              </form>
+                              <button 
+                                onclick="confirmAction(${sub.id}, 'approve')"
+                                class="bg-green-100 text-green-800 px-3 py-1 rounded hover:bg-green-200"
+                              >
+                                <i class="fa fa-check mr-1"></i>Approve
+                              </button>
+                              <button 
+                                onclick="confirmAction(${sub.id}, 'reject')"
+                                class="bg-red-100 text-red-800 px-3 py-1 rounded hover:bg-red-200"
+                              >
+                                <i class="fa fa-times mr-1"></i>Reject
+                              </button>
                             </div>
+                            <!-- 隐藏的确认表单 -->
+                            <form id="form-${sub.id}" method="POST" class="hidden">
+                              <input type="hidden" name="id" value="${sub.id}">
+                              <input type="hidden" name="action" value="">
+                              <input type="hidden" name="confirmed" value="true">
+                            </form>
                           </td>
                         </tr>
                       `).join("")}
@@ -290,184 +436,82 @@ async function handleRequest(req: Request) {
               ${admin.role === "super" ? `
                 <section class="border-t pt-6">
                   <h2 class="text-xl font-semibold mb-4 flex items-center">
-                    <i class="fa fa-users mr-2"></i>Admin Management
+                    <i class="fa fa-users mr-2"></i>Manage Administrators
                   </h2>
                   
-                  <div class="bg-white p-4 rounded-lg border mb-6">
-                    <h3 class="font-medium mb-3">Add New Secondary Admin</h3>
-                    <form action="/admin/api/admins" method="POST" class="space-y-4">
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700">Username</label>
-                        <input type="text" name="username" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
-                      </div>
-                      <div>
-                        <label class="block text-sm font-medium text-gray-700">Password</label>
-                        <input type="password" name="password" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
-                      </div>
-                      <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
-                        <i class="fa fa-plus mr-2"></i>Add Admin
-                      </button>
-                    </form>
-                  </div>
-                  
-                  <div class="bg-white rounded-lg border overflow-hidden">
-                    <h3 class="font-medium p-4 border-b">Current Admins</h3>
-                    <div id="adminList" class="p-4">
-                      <!-- Admin list will be loaded via JavaScript -->
-                      <p class="text-gray-500">Loading admin list...</p>
+                  <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-medium mb-3">Current Administrators</h3>
+                    <table class="min-w-full">
+                      <thead class="bg-gray-50">
+                        <tr>
+                          <th class="py-2 px-4 border-b">Username</th>
+                          <th class="py-2 px-4 border-b">Role</th>
+                          <th class="py-2 px-4 border-b">Created At</th>
+                        </tr>
+                      </thead>
+                      <tbody id="adminList">
+                        <!-- 管理员列表将通过JS动态加载 -->
+                      </tbody>
+                    </table>
+
+                    <div id="adminMessage" class="mt-2 hidden"></div>
+
+                    <div class="mt-6 pt-4 border-t">
+                      <h3 class="font-medium mb-3">Add Secondary Admin</h3>
+                      <form id="addAdminForm" class="space-y-3">
+                        <div>
+                          <label class="block text-gray-700">Username</label>
+                          <input type="text" name="username" class="px-3 py-2 border rounded" required>
+                        </div>
+                        <div>
+                          <label class="block text-gray-700">Password</label>
+                          <input type="password" name="password" class="px-3 py-2 border rounded" required>
+                        </div>
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                          Add Admin
+                        </button>
+                      </form>
                     </div>
                   </div>
                 </section>
               ` : ""}
             </main>
 
+            <script src="/static/admin.js"></script>
             <script>
-              // 加载管理员列表
-              async function loadAdmins() {
-                try {
-                  const response = await fetch('/admin/api/admins');
-                  if (response.ok) {
-                    const admins = await response.json();
-                    const adminList = document.getElementById('adminList');
-                    if (admins.length > 0) {
-                      adminList.innerHTML = \`
-                        <table class="min-w-full">
-                          <thead class="bg-gray-100">
-                            <tr>
-                              <th class="py-2 px-4 border-b">Username</th>
-                              <th class="py-2 px-4 border-b">Role</th>
-                              <th class="py-2 px-4 border-b">Created At</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            \${admins.map(admin => \`
-                              <tr>
-                                <td class="py-2 px-4 border-b">\${admin.username}</td>
-                                <td class="py-2 px-4 border-b">\${admin.role}</td>
-                                <td class="py-2 px-4 border-b">\${new Date(admin.created_at).toLocaleString()}</td>
-                              </tr>
-                            \`).join('')}
-                          </tbody>
-                        </table>
-                      \`;
-                    } else {
-                      adminList.innerHTML = '<p class="text-gray-500">No admins found.</p>';
-                    }
+              // 审核操作确认
+              function confirmAction(id, action) {
+                const confirmed = confirm(`Are you sure you want to ${action} this submission?`);
+                if (confirmed) {
+                  const form = document.getElementById(`form-${id}`);
+                  if (form) {
+                    form.querySelector('input[name="action"]').value = action;
+                    form.submit();
                   }
-                } catch (error) {
-                  console.error('Error loading admins:', error);
                 }
-              }
-
-              // 如果是超级管理员，加载管理员列表
-              if (${admin.role === "super"}) {
-                loadAdmins();
               }
             </script>
           </body>
         </html>
       `;
-      
       return new Response(html, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
+        headers: { "Content-Type": "text/html" },
       });
     } catch (error) {
-      return new Response(`Error loading admin page: ${error.message}`, { status: 500 });
+      return new Response(`Error loading admin panel: ${error.message}`, { status: 500 });
     }
   }
 
-  // 首页
-  if (path === "/" || path === "") {
-    try {
-      const recent = await getRecentApproved(20);
-      const posters = await Promise.all(
-        recent.map(async (item) => ({
-          ...item,
-          poster: await getPoster(item.imdb_id),
-        }))
-      );
-      
-      const html = `
-        <html>
-          <head>
-            <title>Movie Trailers</title>
-            <script src="https://cdn.tailwindcss.com"></script>
-            <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
-          </head>
-          <body class="bg-gray-100">
-            <header class="bg-gray-800 text-white p-4">
-              <div class="container mx-auto text-center">
-                <h1 class="text-3xl font-bold">
-                  <i class="fa fa-film mr-2"></i>Movie Trailers Archive
-                </h1>
-                <p class="mt-2">Recent approved submissions</p>
-              </div>
-            </header>
-            
-            <main class="container mx-auto p-4">
-              <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                ${posters.map(item => `
-                  <div class="bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
-                    ${item.poster ? `
-                      <img src="${item.poster}" alt="Poster for ${item.imdb_id}" class="w-full h-64 object-cover">
-                    ` : `
-                      <div class="w-full h-64 bg-gray-200 flex items-center justify-center">
-                        <i class="fa fa-film text-5xl text-gray-400"></i>
-                      </div>
-                    `}
-                    <div class="p-4">
-                      <div class="text-sm text-gray-500 mb-2">IMDb ID: ${item.imdb_id}</div>
-                      <a href="${item.acfun_url}" target="_blank" class="text-blue-600 hover:underline flex items-center">
-                        <i class="fa fa-external-link mr-1"></i>Watch on AcFun
-                      </a>
-                      <div class="mt-2 text-xs text-gray-500">
-                        Approved: ${new Date(item.approved_at).toLocaleString()}
-                      </div>
-                      <div class="text-xs text-gray-500">
-                        By: ${item.reviewer}
-                      </div>
-                    </div>
-                  </div>
-                `).join("")}
-              </div>
-              
-              ${posters.length === 0 ? `
-                <div class="mt-8 text-center bg-white p-6 rounded-lg">
-                  <i class="fa fa-info-circle text-blue-500 text-3xl mb-2"></i>
-                  <p>No approved submissions yet</p>
-                </div>
-              ` : ""}
-            </main>
-            
-            <footer class="bg-gray-800 text-white p-4 mt-8">
-              <div class="container mx-auto text-center text-sm">
-                <p>&copy; ${new Date().getFullYear()} Movie Trailers Archive</p>
-              </div>
-            </footer>
-          </body>
-        </html>
-      `;
-      
-      return new Response(html, {
-        headers: { "Content-Type": "text/html; charset=utf-8" },
-      });
-    } catch (error) {
-      return new Response(`Error loading homepage: ${error.message}`, { status: 500 });
-    }
-  }
-
-  // 404页面
+  // 未匹配的路由
   return new Response("Not found", { status: 404 });
 }
 
-// 启动服务器
+// 启动HTTP服务
 const port = parseInt(Deno.env.get("PORT") || "8000");
 console.log(`Server running on http://localhost:${port}`);
+await serve(handleRequest, { port });
 
-// 使用正确的serve函数调用
-serve(handleRequest, { port });
-
-// 正确的关闭事件监听
-globalThis.addEventListener("unload", () => {
+// 关闭时清理数据库连接
+window.addEventListener("unload", () => {
   closeDb();
 });
