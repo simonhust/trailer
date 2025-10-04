@@ -325,7 +325,7 @@ async function handleRequest(req: Request) {
             </main>
 
             <script>
-              // 确认操作函数
+              // 确认操作函数 - 修复模板字符串和语法
               function confirmAction(id, action) {
                 const actionText = action === 'approve' ? 'approve' : 'reject';
                 const confirmation = confirm(`Are you sure you want to ${actionText} this submission?`);
