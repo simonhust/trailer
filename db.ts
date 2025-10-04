@@ -202,7 +202,7 @@ export async function submitEntry(imdbId: string, acfunUrl: string) {
   }
   
   // 生成唯一ID（使用时间戳和随机数）
-  const id = Date.now() + Math.floor(Math.random() * 1000);
+  const id = Date.now();
   
   await client.queryObject({
     text: "INSERT INTO submissions (id, imdb_id, acfun_url) VALUES ($1, $2, $3)",
