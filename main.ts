@@ -54,14 +54,7 @@ async function authenticateAdmin(req: Request): Promise<{
   if (scheme !== "Basic" || !encoded) return { valid: false };
 
   try {
-    // 修复Base64解码处理
-    const binaryString = atob(encoded);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const decoded = new TextDecoder().decode(bytes);
-    
+    const decoded = new TextDecoder().decode(atob(encoded));
     const [username, password] = decoded.split(":");
     
     if (!username || !password) return { valid: false };
@@ -334,9 +327,9 @@ async function handleRequest(req: Request) {
 
             <script src="/static/admin.js"></script>
             <script>
-              // 确认操作函数
+              // 确认操作函数 - 修复模板字符串冲突问题
               function confirmAction(id, action) {
-                const confirmed = confirm(`Are you sure you want to ${action} this submission?`);
+                const confirmed = confirm('Are you sure you want to ' + action + ' this submission?');
                 if (confirmed) {
                   const form = document.getElementById(\`form-\${id}\`);
                   if (form) {
