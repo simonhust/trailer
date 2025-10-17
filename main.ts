@@ -535,7 +535,7 @@ async function handleRequest(req: Request) {
                         </div>
                       </div>
                     </div>
-                  `;
+                  ;
                 }))}
               </div>
             `}
