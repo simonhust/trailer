@@ -475,73 +475,77 @@ async function handleRequest(req: Request) {
   try {
     const recent = await getRecentApproved(20);
     const html = `
-      <html>
-        <head>
-          <title>Movie Trailers</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
-        </head>
-        <body class="bg-gray-50">
-          <header class="bg-gray-800 text-white p-4">
-            <div class="container mx-auto">
-              <h1 class="text-2xl font-bold">
-                <i class="fa fa-film mr-2"></i>Movie Trailers Archive
-              </h1>
-              <div class="mt-2">
-                <a href="/submit" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded inline-block">
-                  <i class="fa fa-plus mr-1"></i>Submit New Trailer
-                </a>
-                <a href="/admin/login" class="ml-2 bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded inline-block">
-                  <i class="fa fa-lock mr-1"></i>Admin Login
-                </a>
-              </div>
+     <html>
+      <head>
+        <title>Movie Trailers</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+      </head>
+      <body class="bg-gray-50">
+        <header class="bg-gray-800 text-white p-4">
+          <div class="container mx-auto">
+            <h1 class="text-2xl font-bold">
+              <i class="fa fa-film mr-2"></i>Movie Trailers Archive
+            </h1>
+            <div class="mt-2">
+              <a href="/submit" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded inline-block">
+                <i class="fa fa-plus mr-1"></i>Submit New Trailer
+              </a>
+              <a href="/admin/login" class="ml-2 bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded inline-block">
+                <i class="fa fa-lock mr-1"></i>Admin Login
+              </a>
             </div>
-          </header>
-
-          <main class="container mx-auto p-4">
-            <h2 class="text-xl font-semibold mb-4">Recently Approved Trailers</h2>
-            
-            ${recent.length === 0 ? `
-              <div class="bg-yellow-100 p-4 rounded">
-                <i class="fa fa-info-circle text-yellow-600 mr-2"></i>
-                No approved trailers yet
-              </div>
-            ` : `
-              <div class="flex flex-wrap -mx-2">
-                ${await Promise.all(recent.map(async (item) => {
-                  const poster = await getPoster(item.imdb_id);
-                  return `
-                    <div class="w-full sm:w-1/2 md:w-1/3 lg:w-1/4 xl:w-1/5 p-2">
-                      <div class="bg-white rounded-lg overflow-hidden shadow hover:shadow-md transition-all duration-300 h-full flex flex-col">
-                        ${poster ? `
-                          <div class="relative pb-[150%] overflow-hidden">
-                            <img src="${poster}" alt="Poster for ${item.imdb_id}" 
-                                 class="absolute top-0 left-0 w-full h-full object-cover transform hover:scale-105 transition-transform duration-300">
-                          </div>
-                        ` : `
-                          <div class="relative pb-[150%] bg-gray-200 flex items-center justify-center">
-                            <i class="fa fa-film text-5xl text-gray-400"></i>
-                          </div>
-                        `}
-                        <div class="p-3 flex-grow flex flex-col">
-                          <div class="font-medium mb-1 text-sm truncate">${item.imdb_id}</div>
-                          <a href="${item.acfun_url}" target="_blank" 
-                             class="text-blue-600 hover:underline text-sm mb-2 inline-block">
-                            <i class="fa fa-play-circle mr-1"></i>Watch
-                          </a>
-                          <div class="text-xs text-gray-500 mt-auto">
-                            ${new Date(item.approved_at).toLocaleDateString()}
-                          </div>
+          </div>
+        </header>
+    
+        <main class="container mx-auto p-4">
+          <h2 class="text-xl font-semibold mb-4">Recently Approved Trailers</h2>
+          
+          ${recent.length === 0 ? `
+            <div class="bg-yellow-100 p-4 rounded">
+              <i class="fa fa-info-circle text-yellow-600 mr-2"></i>
+              No approved trailers yet
+            </div>
+          ` : `
+            <!-- 使用弹性布局容器 -->
+            <div class="flex flex-wrap gap-3">
+              ${(await Promise.all(recent.map(async (item) => {
+                const poster = await getPoster(item.imdb_id);
+                return `
+                  <!-- 更小的卡片尺寸 - 调整了响应式宽度比例 -->
+                  <div class="flex-shrink-0 w-full sm:w-1/3 md:w-1/4 lg:w-1/5 xl:w-1/6">
+                    <div class="bg-white rounded-lg overflow-hidden shadow hover:shadow-md transition-all duration-300 h-full flex flex-col">
+                      ${poster ? `
+                        <div class="relative pb-[150%] overflow-hidden">
+                          <img src="${poster}" alt="Poster for ${item.imdb_id}" 
+                               class="absolute top-0 left-0 w-full h-full object-cover transform hover:scale-105 transition-transform duration-300">
+                        </div>
+                      ` : `
+                        <div class="relative pb-[150%] bg-gray-200 flex items-center justify-center">
+                          <i class="fa fa-film text-5xl text-gray-400"></i>
+                        </div>
+                      `}
+                      <!-- 文字部分添加背景和内边距 -->
+                      <div class="p-2 bg-gray-50 flex-grow flex flex-col">
+                        <div class="font-medium mb-1 text-xs truncate">${item.imdb_id}</div>
+                        <a href="${item.acfun_url}" target="_blank" 
+                           class="text-blue-600 hover:underline text-xs mb-1 inline-block">
+                          <i class="fa fa-play-circle mr-1"></i>Watch
+                        </a>
+                        <div class="text-xs text-gray-500 mt-auto">
+                          ${new Date(item.approved_at).toLocaleDateString()}
                         </div>
                       </div>
                     </div>
-                  ;
-                }))}
-              </div>
-            `}
-          </main>
-        </body>
-      </html>
+                  </div>
+                `;
+              }))).join('')}
+            </div>
+          `}
+        </main>
+      </body>
+    </html>
+
     `;
     
     return new Response(html, {
